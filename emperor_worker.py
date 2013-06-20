@@ -29,6 +29,17 @@ GITHUB_URL = "https://api.github.com/repos/qiime/emperor/pulls"
 ELEMENT_PAT = re_compile(r'<(.+?)>')
 REL_PAT = re_compile(r'rel=[\'"](\w+)[\'"]')
 
+GENERIC_INDEX = """<!DOCTYPE html>
+<html>
+<body>
+<h1>Currently looking at %s</h1>
+%s
+</body>
+</html>"""
+
+GENERIC_LINK = """<br><a href="%s">%s</a>
+"""
+
 # Taken from matplotlibs tools/github_stats.py
 def parse_link_header(headers):
     link_s = headers.get('link', '')
@@ -69,8 +80,11 @@ def qiime_system_call(cmd, shell=True):
     return stdout, stderr, return_value
 
 def run_script_usage_examples(script_path, output_dir):
-    """ """
+    """Heavily based on QIIME's/QCLI's script usage testing """
     # original_dir = getcwd()
+
+    string_to_write = GENERIC_INDEX
+    links = []
 
     try:
         rmtree(output_dir)
@@ -100,7 +114,15 @@ def run_script_usage_examples(script_path, output_dir):
         cmd = example[2].replace('%prog',script_name+'.py')
         o, e, _ = qiime_system_call(cmd)
 
+        # we should get the output name for the folder
+        name = cmd.split('-o')[1].split(' ')[1]
+        links.append(GENERIC_LINK % (join(name, 'index.html'), 'The folder to see is '+name))
+
         print("Running: " + cmd)
+
+    fd = open('index.html', 'w')
+    fd.write(GENERIC_INDEX % (basename(output_dir), ''.join(links)))
+    fd.close()
 
     # chdir(original_dir)
 
