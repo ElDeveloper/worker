@@ -68,16 +68,29 @@ def qiime_system_call(cmd, shell=True):
     return_value = proc.returncode
     return stdout, stderr, return_value
 
-def run_script_usage_examples(script_path, output_dir=None):
+def run_script_usage_examples(script_path, output_dir):
     """ """
-    original_dir = getcwd()
+    # original_dir = getcwd()
 
+    try:
+        rmtree(output_dir)
+    except OSError:
+        pass
+
+    # retrieve multi-purpose variables
     script_name = splitext(basename(script_path))[0]
     script_dir = dirname(abspath(script_path))
+
+    # add the folder where the scripts are located
     addsitedir(script_dir)
     test_data_dir = join(dirname(script_dir), 'tests/scripts_test_data/%s/' % script_name)
+
+    # import the script of interest
     script = __import__(script_name)
 
+    # retrieve the dictionary of usage examples, where the actual command is the
+    # third element in the tuple, remember that %prog should be replaced by the
+    # name of the script that needs to be tested right now
     usage_examples = script.script_info['script_usage']
 
     copytree(test_data_dir, output_dir)
@@ -87,36 +100,40 @@ def run_script_usage_examples(script_path, output_dir=None):
         cmd = example[2].replace('%prog',script_name+'.py')
         o, e, _ = qiime_system_call(cmd)
 
-        print(cmd)
-        break
+        print("Running: " + cmd)
 
-    chdir(original_dir)
+    # chdir(original_dir)
 
 
 if __name__ == "__main__":
+
+    # a la viva mexico! (read with an american accent)
     try:
         emperor_path = argv[1]
     except IndexError:
         emperor_path = '/home/yova1074/emperor/'
-    
+    try:
+        master_path = argv[2]
+    except IndexError:
+        master_path = '/var/www/html/master'
+
+
+    # this string is annoyingly re-used in every git command call
+    GIT_STRING = 'git --git-dir=%s/.git ' % emperor_path
+
     print('The URL is %s' % GITHUB_URL, file=stderr)
 
-    PULL = 'git --git-dir=/Users/yoshikivazquezbaeza/git_sw/emperor/.git pull git://github.com/qiime/emperor.git master'
+    PULL = '%s pull git://github.com/qiime/emperor.git master' % GIT_STRING
     e, o, r = qiime_system_call(PULL)
 
     if r != 0:
+        print('Could not pull from master, not continuing.')
+        print(o)
         print(e)
+        exit(0)
 
-    # run_script_usage_examples('/Users/yoshikivazquezbaeza/git_sw/emperor/scripts/make_emperor.py',
-    #     '/Users/yoshikivazquezbaeza')
-
-    # pull the latest changes to the local repository at its master branch
-    # run all the commands as defined in the usage examples make_emperor.py
-    # make sure to do all this in a temporary location so the replacement is
-    # as smooth as possible
-    # copy all the generated files into the public folder that we have assigned
-
-    # remove anything in the public folder that begins with pull_
+    script_path = join(emperor_path, 'scripts/make_emperor.py')
+    run_script_usage_examples(script_path, master_path)
 
     # begin the fun by fetching all of the open pull requests
     try:
@@ -133,26 +150,57 @@ if __name__ == "__main__":
         print('URL: %s' % result['head']['repo']['git_url'])
         print('Branch name: %s' % result['head']['ref'])
 
-        cmd = 'git --git-dir=/Users/yoshikivazquezbaeza/git_sw/emperor/.git checkout -b pull_%s' % result['number']
+        deploying_folder = join(dirname(master_path), 'pull_'+str(result['number']))
+
+        # create a new branch whre this open pull request will live
+        cmd = '%s checkout -b pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
         if r != 0:
             continue
 
-        cmd = 'git --git-dir=/Users/yoshikivazquezbaeza/git_sw/emperor/.git pull %s %s' % (result['head']['repo']['git_url'], result['head']['ref'])
+        # pull stuff from the branch in question
+        cmd = '%s pull %s %s' % (GIT_STRING, result['head']['repo']['git_url'], result['head']['ref'])
+        o, e, r = qiime_system_call(cmd)
+
+        # once we pull whether or not it's right i. e. no conflicts, remove the
+        # previous folder to ensure there are no confusions with the data
+        try:
+            rmtree(deploying_folder)
+        except OSError:
+            pass
+
+        # if something went wrong with the system call then clean all unusable
+        # files, reset the repository to the latest head and force a checkout
+        # of the master branch in the current repository so any of the other
+        # pull requests that are open are not affected by this problem
+        if r != 0:
+            print('Could not pull the latest changes trying to clean the folder ...')
+            cmd = '%s clean -xdf' % GIT_STRING
+            o, e, r = qiime_system_call(cmd)
+            cmd = '%s reset --hard HEAD' % GIT_STRING
+            o, e, r = qiime_system_call(cmd)
+            cmd = '%s checkout -f master' % GIT_STRING
+            o, e, r = qiime_system_call(cmd)
+
+            # delete the current branch
+            cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
+            o, e, r = qiime_system_call(cmd)
+
+            continue
+
+        # if nothing went wrong, run the script usage examples that will finally
+        # let you see the rendered examples for this pull request
+        run_script_usage_examples(script_path, deploying_folder)
+
+        # go back to master so everything is safely kosher
+        cmd = '%s checkout master' % GIT_STRING
         o, e, r = qiime_system_call(cmd)
         if r != 0:
             continue
 
-        cmd = 'git --git-dir=/Users/yoshikivazquezbaeza/git_sw/emperor/.git checkout master'
+        # delete the current branch only if we could switch back to master
+        cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
-        if r != 0:
-            continue
-
-        # run_script_usage_examples('/Users/yoshikivazquezbaeza/git_sw/emperor/scripts/make_emperor.py',
-        #     '/Users/yoshikivazquezbaeza')
 
 
-        # checkout a new branch with the name pull_XX
-        # pull from the repository where this pull request is originally located
-        # build all the examples in this version of make_emperor.py
-        # copy them to the public location
+
