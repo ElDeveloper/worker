@@ -32,7 +32,7 @@ REL_PAT = re_compile(r'rel=[\'"](\w+)[\'"]')
 GENERIC_INDEX = """<!DOCTYPE html>
 <html>
 <body>
-<h1>Currently looking at %s</h1>
+<h1>Examples built from <a href="%s">%s</a></h1>
 %s
 </body>
 </html>"""
@@ -90,7 +90,6 @@ def run_script_usage_examples(script_path, output_dir):
     try:
         rmtree(output_dir)
     except OSError, e:
-        print('Oh shut there was an exception %s' %  e.message)
         pass
 
     # retrieve multi-purpose variables
@@ -109,7 +108,6 @@ def run_script_usage_examples(script_path, output_dir):
     # name of the script that needs to be tested right now
     usage_examples = script.script_info['script_usage']
 
-    print('The test data dir is %s and the output dir is %s' % (test_data_dir, output_dir))
     o, e, _ = qiime_system_call('git --git-dir=/home/yova1074/emperor/.git branch')
     print(o, e)
     #raw_input('Before compying the data from %s to %s ' % (test_data_dir, output_dir))
@@ -124,7 +122,7 @@ def run_script_usage_examples(script_path, output_dir):
 
         # we should get the output name for the folder
         name = cmd.split('-o')[1].split(' ')[1]
-        links.append(GENERIC_LINK % (join(name, 'index.html'), 'The folder to see is '+name))
+        links.append(GENERIC_LINK % (join(name, 'index.html'), name))
 
         rmtree(name)
         print('Deleting %s' % name)
@@ -135,7 +133,10 @@ def run_script_usage_examples(script_path, output_dir):
         if e: print(e)
 
     fd = open('index.html', 'w')
-    fd.write(GENERIC_INDEX % (basename(output_dir), ''.join(links)))
+    if basename(output_dir) == 'master':
+        fd.write(GENERIC_INDEX % ("https://github.com/qiime/emperor/tree/master", basename(output_dir), ''.join(links)))
+    else:
+        fd.write(GENERIC_INDEX % ("https://github.com/qiime/emperor/pull/"+basename(output_dir).split('_')[1], basename(output_dir), ''.join(links)))
     fd.close()
 
     chdir(original_dir)
@@ -213,6 +214,7 @@ if __name__ == "__main__":
         # of the master branch in the current repository so any of the other
         # pull requests that are open are not affected by this problem
         if r != 0:
+            print('Could not pull the latest changes trying to clean the folder ...')
             print('Could not pull the latest changes trying to clean the folder ...')
             cmd = '%s clean -xdf' % GIT_STRING
             o, e, r = qiime_system_call(cmd)
