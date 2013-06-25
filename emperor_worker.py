@@ -54,7 +54,7 @@ def get_paged_request(url):
     """get a full list, handling APIv3's paging"""
     results = []
     while url:
-        print("fetching %s" % url, file=stderr)
+        print("fetching %s" % url)
         f = urlopen(url)
         results.extend(load_json(f))
         links = parse_link_header(f.headers)
@@ -81,14 +81,16 @@ def qiime_system_call(cmd, shell=True):
 
 def run_script_usage_examples(script_path, output_dir):
     """Heavily based on QIIME's/QCLI's script usage testing """
-    # original_dir = getcwd()
-
+    original_dir = getcwd()
+    chdir(dirname(output_dir))
+    print ('Currently at %s' % getcwd())
     string_to_write = GENERIC_INDEX
     links = []
 
     try:
         rmtree(output_dir)
-    except OSError:
+    except OSError, e:
+        print('Oh shut there was an exception %s' %  e.message)
         pass
 
     # retrieve multi-purpose variables
@@ -107,24 +109,36 @@ def run_script_usage_examples(script_path, output_dir):
     # name of the script that needs to be tested right now
     usage_examples = script.script_info['script_usage']
 
+    print('The test data dir is %s and the output dir is %s' % (test_data_dir, output_dir))
+    o, e, _ = qiime_system_call('git --git-dir=/home/yova1074/emperor/.git branch')
+    print(o, e)
+    #raw_input('Before compying the data from %s to %s ' % (test_data_dir, output_dir))
     copytree(test_data_dir, output_dir)
+    #raw_input('Once the data has been copied')
     chdir(output_dir)
+    print(getcwd())
 
     for example in usage_examples:
         cmd = example[2].replace('%prog',script_name+'.py')
-        o, e, _ = qiime_system_call(cmd)
+#        o, e, _ = qiime_system_call(cmd)
 
         # we should get the output name for the folder
         name = cmd.split('-o')[1].split(' ')[1]
         links.append(GENERIC_LINK % (join(name, 'index.html'), 'The folder to see is '+name))
 
+        rmtree(name)
+        print('Deleting %s' % name)
+        #raw_input('This folder has been delated %s' % name)
+        o, e, _ = qiime_system_call(cmd)
         print("Running: " + cmd)
+        if o: print(o)
+        if e: print(e)
 
     fd = open('index.html', 'w')
     fd.write(GENERIC_INDEX % (basename(output_dir), ''.join(links)))
     fd.close()
 
-    # chdir(original_dir)
+    chdir(original_dir)
 
 
 if __name__ == "__main__":
@@ -143,7 +157,7 @@ if __name__ == "__main__":
     # this string is annoyingly re-used in every git command call
     GIT_STRING = 'git --git-dir=%s/.git ' % emperor_path
 
-    print('The URL is %s' % GITHUB_URL, file=stderr)
+    #print('The URL is %s' % GITHUB_URL, file=stderr)
 
     PULL = '%s pull git://github.com/qiime/emperor.git master' % GIT_STRING
     e, o, r = qiime_system_call(PULL)
@@ -166,6 +180,9 @@ if __name__ == "__main__":
     if len(results) == 0:
         print('No active pull requests, getting the exiting ...')
         exit(0)
+
+    #print('I do not know what is going on with this')
+    #exit(1111);
 
     for result in results:
         print('Active pull request "pull_%s"' % result['number'])
@@ -199,30 +216,45 @@ if __name__ == "__main__":
             print('Could not pull the latest changes trying to clean the folder ...')
             cmd = '%s clean -xdf' % GIT_STRING
             o, e, r = qiime_system_call(cmd)
+            #print(o, e)
             cmd = '%s reset --hard HEAD' % GIT_STRING
             o, e, r = qiime_system_call(cmd)
+            #print(o, e)
             cmd = '%s checkout -f master' % GIT_STRING
             o, e, r = qiime_system_call(cmd)
+            #print(o, e)
 
             # delete the current branch
             cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
             o, e, r = qiime_system_call(cmd)
+            #print(o, e)
 
             continue
+
+        o, e, _ = qiime_system_call('%s branch' % GIT_STRING)
+        print(o)
+        o, e, _ = qiime_system_call('%s rev-parse HEAD' % GIT_STRING)
+        print(o)
 
         # if nothing went wrong, run the script usage examples that will finally
         # let you see the rendered examples for this pull request
         run_script_usage_examples(script_path, deploying_folder)
 
         # go back to master so everything is safely kosher
-        cmd = '%s checkout master' % GIT_STRING
+        cmd = '%s checkout -f master' % GIT_STRING
         o, e, r = qiime_system_call(cmd)
+        print('Checking out the master branch')
+        #if o: print(o)
+        #if e: print(e)
+
         if r != 0:
             continue
 
         # delete the current branch only if we could switch back to master
         cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
-
+        print('deleting the branch')
+        #if o: print(o)
+        #if e: print(e)
 
 
