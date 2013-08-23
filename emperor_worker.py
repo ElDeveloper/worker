@@ -15,7 +15,7 @@ from re import compile as re_compile
 from datetime import datetime, timedelta
 
 from site import addsitedir
-from os import chdir, getcwd
+from os import chdir, getcwd, makedirs
 from sys import argv, stderr
 from shutil import copytree, rmtree
 from os.path import split as path_split
@@ -82,15 +82,14 @@ def qiime_system_call(cmd, shell=True):
 def run_script_usage_examples(script_path, output_dir):
     """Heavily based on QIIME's/QCLI's script usage testing """
     original_dir = getcwd()
-    chdir(dirname(output_dir))
+
+    assert exists(output_dir), "The output directory has to exist"
+
+    chdir(output_dir)
     print ('Currently at %s' % getcwd())
+
     string_to_write = GENERIC_INDEX
     links = []
-
-    try:
-        rmtree(output_dir)
-    except OSError, e:
-        pass
 
     # retrieve multi-purpose variables
     script_name = splitext(basename(script_path))[0]
@@ -118,13 +117,17 @@ def run_script_usage_examples(script_path, output_dir):
 
     for example in usage_examples:
         cmd = example[2].replace('%prog',script_name+'.py')
-#        o, e, _ = qiime_system_call(cmd)
+        o, e, _ = qiime_system_call(cmd)
 
         # we should get the output name for the folder
         name = cmd.split('-o')[1].split(' ')[1]
         links.append(GENERIC_LINK % (join(name, 'index.html'), name))
+        
+        try:
+            rmtree(name)
+        except:
+            pass
 
-        rmtree(name)
         print('Deleting %s' % name)
         #raw_input('This folder has been delated %s' % name)
         o, e, _ = qiime_system_call(cmd)
@@ -190,17 +193,43 @@ if __name__ == "__main__":
         print('URL: %s' % result['head']['repo']['git_url'])
         print('Branch name: %s' % result['head']['ref'])
 
+        def branch_problem(message):
+            # if something went wrong with the system call then clean all unusable
+            # files, reset the repository to the latest head and force a checkout
+            # of the master branch in the current repository so any of the other
+            # pull requests that are open are not affected by this problem
+            if r != 0:
+                print(message)
+                print('Cleaning the repo ...')
+                cmd = '%s clean -xdf' % GIT_STRING
+                o, e, r = qiime_system_call(cmd)
+
+                cmd = '%s reset --hard HEAD' % GIT_STRING
+                o, e, r = qiime_system_call(cmd)
+
+                cmd = '%s checkout -f master' % GIT_STRING
+                o, e, r = qiime_system_call(cmd)
+
+                # delete the current branch
+                cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
+                o, e, r = qiime_system_call(cmd)
+
         deploying_folder = join(dirname(master_path), 'pull_'+str(result['number']))
+        print 'Folder where the pull request will be deployed: ' + deploying_folder
 
         # create a new branch whre this open pull request will live
         cmd = '%s checkout -b pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
         if r != 0:
+            branch_problem('could not checkout a new branch')
             continue
 
         # pull stuff from the branch in question
         cmd = '%s pull %s %s' % (GIT_STRING, result['head']['repo']['git_url'], result['head']['ref'])
         o, e, r = qiime_system_call(cmd)
+        if r != 0:
+            branch_problem('could not pull down the custom branch')
+            continue
 
         # once we pull whether or not it's right i. e. no conflicts, remove the
         # previous folder to ensure there are no confusions with the data
@@ -208,35 +237,8 @@ if __name__ == "__main__":
             rmtree(deploying_folder)
         except OSError:
             pass
-
-        # if something went wrong with the system call then clean all unusable
-        # files, reset the repository to the latest head and force a checkout
-        # of the master branch in the current repository so any of the other
-        # pull requests that are open are not affected by this problem
-        if r != 0:
-            print('Could not pull the latest changes trying to clean the folder ...')
-            print('Could not pull the latest changes trying to clean the folder ...')
-            cmd = '%s clean -xdf' % GIT_STRING
-            o, e, r = qiime_system_call(cmd)
-            #print(o, e)
-            cmd = '%s reset --hard HEAD' % GIT_STRING
-            o, e, r = qiime_system_call(cmd)
-            #print(o, e)
-            cmd = '%s checkout -f master' % GIT_STRING
-            o, e, r = qiime_system_call(cmd)
-            #print(o, e)
-
-            # delete the current branch
-            cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
-            o, e, r = qiime_system_call(cmd)
-            #print(o, e)
-
-            continue
-
-        o, e, _ = qiime_system_call('%s branch' % GIT_STRING)
-        print(o)
-        o, e, _ = qiime_system_call('%s rev-parse HEAD' % GIT_STRING)
-        print(o)
+        finally:
+            makedirs(deploying_folder)
 
         # if nothing went wrong, run the script usage examples that will finally
         # let you see the rendered examples for this pull request
@@ -245,18 +247,14 @@ if __name__ == "__main__":
         # go back to master so everything is safely kosher
         cmd = '%s checkout -f master' % GIT_STRING
         o, e, r = qiime_system_call(cmd)
-        print('Checking out the master branch')
-        #if o: print(o)
-        #if e: print(e)
-
         if r != 0:
+            branch_problem('could not check out master')
             continue
 
         # delete the current branch only if we could switch back to master
         cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
         print('deleting the branch')
-        #if o: print(o)
-        #if e: print(e)
+
 
 
