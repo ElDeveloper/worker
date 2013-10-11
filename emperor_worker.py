@@ -27,10 +27,10 @@ from os.path import abspath, dirname, join, basename, splitext, exists
 # https://api.github.com/repos/qiime/emperor/pulls
 # curl -i https://api.github.com/repos/qiime/emperor | less -S
 
+# repository that we want to be pulling from
 GITHUB_URL = "https://api.github.com/repos/qiime/emperor/pulls"
-ELEMENT_PAT = re_compile(r'<(.+?)>')
-REL_PAT = re_compile(r'rel=[\'"](\w+)[\'"]')
 
+# HTML formatting strings for the index.html files for each pull request
 GENERIC_INDEX = """<!DOCTYPE html>
 <html>
 <body>
@@ -38,15 +38,14 @@ GENERIC_INDEX = """<!DOCTYPE html>
 %s
 </body>
 </html>"""
-
 GENERIC_LINK = """<br><a href="%s">%s</a>
 """
 
 # Taken from matplotlib's tools/github_stats.py
 def parse_link_header(headers):
     link_s = headers.get('link', '')
-    urls = ELEMENT_PAT.findall(link_s)
-    rels = REL_PAT.findall(link_s)
+    urls = re_compile(r'<(.+?)>').findall(link_s)
+    rels = re_compile(r'rel=[\'"](\w+)[\'"]').findall(link_s)
     d = {}
     for rel,url in zip(rels, urls):
         d[rel] = url
@@ -93,13 +92,12 @@ def run_script_usage_examples(script_path, output_dir):
 
     Heavily based on QIIME's/QCLI's script usage testing"""
 
-    original_dir = getcwd()
-
+    # without these two assertions being true the results could be unexpected
     assert exists(script_path), "The script path does not exist"
     assert exists(output_dir), "The output directory has to exist"
 
+    original_dir = getcwd()
     chdir(output_dir)
-    print ('Currently at %s' % getcwd())
 
     string_to_write = GENERIC_INDEX
     links = []
@@ -137,17 +135,16 @@ def run_script_usage_examples(script_path, output_dir):
         name = cmd.split('-o')[1].split(' ')[1]
         links.append(GENERIC_LINK % (join(name, 'index.html'), name))
         
+        print('Deleting: %s' % name)
         try:
             rmtree(name)
         except:
             pass
 
-        print('Deleting %s' % name)
         #raw_input('This folder has been delated %s' % name)
-        o, e, _ = qiime_system_call(cmd)
-        print("Running: " + cmd)
-        if o: print(o)
-        if e: print(e)
+        o, e, r = qiime_system_call(cmd)
+        print("Executing: " + cmd)
+        if r != 0: print(o, e)
 
     fd = open('index.html', 'w')
     if basename(output_dir) == 'master':
@@ -244,12 +241,14 @@ if __name__ == "__main__":
         print('URL: %s' % result['head']['repo']['git_url'])
         print('Branch name: %s' % result['head']['ref'])
 
-        deploying_folder = join(dirname(master_path), 'pull_'+str(result['number']))
-        print('Folder where the pull request will be deployed: ' + deploying_folder)
+        deploying_folder = join(dirname(master_path), 'pull_'+str(
+            result['number']))
+        print('Folder where the pull request will be deployed: ',
+            deploying_folder)
 
         chdir(emperor_path)
 
-        # create a new branch whre this open pull request will live
+        # create a new branch where this open pull request will live
         cmd = '%s checkout -b pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
         if r != 0:
@@ -277,7 +276,7 @@ if __name__ == "__main__":
         # let you see the rendered examples for this pull request
         run_script_usage_examples(script_path, deploying_folder)
 
-        # go back to master so everything is safely kosher
+        # go back to master so everything is kosher
         cmd = '%s checkout -f master' % GIT_STRING
         o, e, r = qiime_system_call(cmd)
         if r != 0:
