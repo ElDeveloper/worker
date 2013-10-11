@@ -2,11 +2,13 @@
 from __future__ import print_function
 
 __author__ = "Yoshiki Vazquez-Baeza"
+__credits__ = ["Yoshiki Vazquez Baeza"]
+__copyright__ = "Copyright 2013, Worker"
 __license__ = "GPL"
 __version__ = "1.0.0-dev"
 __maintainer__ = "Yoshiki Vazquez-Baeza"
 __email__ = "yoshiki89@gmail.com"
-__status__ = "Use at your own risk"
+__status__ = "Development"
 
 
 from urllib import urlopen
@@ -81,9 +83,19 @@ def qiime_system_call(cmd, shell=True):
     return stdout, stderr, return_value
 
 def run_script_usage_examples(script_path, output_dir):
-    """Heavily based on QIIME's/QCLI's script usage testing """
+    """Run the script usage tests for a path with scripts
+
+    Inputs:
+    script_path: path where the scripts that will be executed can be found
+    output_dir: path where the scripts will be executed, these path must include
+    folders for the inputs of the script_usage_examples of the scripts in
+    script_path
+
+    Heavily based on QIIME's/QCLI's script usage testing"""
+
     original_dir = getcwd()
 
+    assert exists(script_path), "The script path does not exist"
     assert exists(output_dir), "The output directory has to exist"
 
     chdir(output_dir)
@@ -98,7 +110,8 @@ def run_script_usage_examples(script_path, output_dir):
 
     # add the folder where the scripts are located
     addsitedir(script_dir)
-    test_data_dir = join(dirname(script_dir), 'tests/scripts_test_data/%s/' % script_name)
+    test_data_dir = join(dirname(script_dir), 'tests/scripts_test_data/%s/' %
+        script_name)
 
     # import the script of interest
     script = __import__(script_name)
@@ -108,16 +121,15 @@ def run_script_usage_examples(script_path, output_dir):
     # name of the script that needs to be tested right now
     usage_examples = script.script_info['script_usage']
 
-    o, e, _ = qiime_system_call('git --git-dir=/home/yova1074/emperor/.git branch')
-    print(o, e)
+    # copying a full tree in python is complicated when you don't care about
+    # overwritting the contents of existing folders hence the system call
+    o, e, _ = qiime_system_call('cp -Rf "%s" "%s"' % (test_data_dir,output_dir))
 
-    o, e, _ = qiime_system_call('cp -Rf %s %s' % (test_data_dir, output_dir))
-    # copytree(test_data_dir, output_dir)
-
-    print(getcwd())
-
+    # go to the script directory and run the usage examples
     chdir(script_name)
+
     for example in usage_examples:
+        # %prog is the keyword in the scripts replace for the script name
         cmd = example[2].replace('%prog',script_name+'.py')
         o, e, _ = qiime_system_call(cmd)
 
@@ -139,12 +151,54 @@ def run_script_usage_examples(script_path, output_dir):
 
     fd = open('index.html', 'w')
     if basename(output_dir) == 'master':
-        fd.write(GENERIC_INDEX % ("https://github.com/qiime/emperor/tree/master", basename(output_dir), ''.join(links)))
+        fd.write(GENERIC_INDEX%("https://github.com/qiime/emperor/tree/master",
+            basename(output_dir), ''.join(links)))
     else:
-        fd.write(GENERIC_INDEX % ("https://github.com/qiime/emperor/pull/"+basename(output_dir).split('_')[1], basename(output_dir), ''.join(links)))
+        fd.write(GENERIC_INDEX%("https://github.com/qiime/emperor/pull/"+\
+            basename(output_dir).split('_')[1], basename(output_dir), ''.join(
+            links)))
     fd.close()
 
     chdir(original_dir)
+
+
+def branch_problem(message, git_string, pull_number):
+    """Recover after a problem in a PullRequest branch
+
+    message: string describing the problem that originated this purge
+    git_string: string prefix of the git call for git commands to be executed
+    pull_number: string with the number of the issue in GitHub.com
+
+    if something went wrong with the system call then clean all unusable
+    files, reset the repository to the latest head and force a checkout
+    of the master branch in the current repository so any of the other
+    pull requests that are open are not affected by this problem"""
+
+    print(message)
+    print('Cleaning the repo ...')
+
+    # clean any extraneous files that are laying around
+    cmd = '%s clean -xdf' % git_string
+    o, e, r = qiime_system_call(cmd)
+    if r != 0: print('Fatal, could not clean the repository.')
+    exit(1)
+
+    # undo all the changes that could have been generated
+    cmd = '%s reset --hard HEAD *' % git_string
+    o, e, r = qiime_system_call(cmd)
+    if r != 0: print('Fatal, could not reset to the current HEAD.')
+    exit(1)
+
+    # force back to be at the master branch
+    cmd = '%s checkout -f master' % git_string
+    o, e, r = qiime_system_call(cmd)
+    if r != 0: print('Fatal, could not force back to master.')
+    exit(1)
+
+    # delete the current branch
+    cmd = '%s branch -D pull_%s' % (git_string, pull_number)
+    o, e, r = qiime_system_call(cmd)
+    if r != 0: print('Could not delete the branch.')
 
 
 if __name__ == "__main__":
@@ -174,40 +228,21 @@ if __name__ == "__main__":
     script_path = join(emperor_path, 'scripts/make_emperor.py')
     run_script_usage_examples(script_path, master_path)
 
-    # begin the fun by fetching all of the open pull requests
+    # fetch all the open pull requests
     try:
         results = get_paged_request(GITHUB_URL)
     except IOError:
         print('Could not establish a connection', file=stderr)
 
     if len(results) == 0:
-        print('No active pull requests, getting the exiting ...')
+        print('There are no active pull requests to deploy')
         exit(0)
 
+    # if we found active pull requests then deploy them
     for result in results:
         print('Active pull request "pull_%s"' % result['number'])
         print('URL: %s' % result['head']['repo']['git_url'])
         print('Branch name: %s' % result['head']['ref'])
-
-        def branch_problem(message):
-            # if something went wrong with the system call then clean all unusable
-            # files, reset the repository to the latest head and force a checkout
-            # of the master branch in the current repository so any of the other
-            # pull requests that are open are not affected by this problem
-            print(message)
-            print('Cleaning the repo ...')
-            cmd = '%s clean -xdf' % GIT_STRING
-            o, e, r = qiime_system_call(cmd)
-
-            cmd = '%s reset --hard HEAD *' % GIT_STRING
-            o, e, r = qiime_system_call(cmd)
-
-            cmd = '%s checkout -f master' % GIT_STRING
-            o, e, r = qiime_system_call(cmd)
-
-            # delete the current branch
-            cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
-            o, e, r = qiime_system_call(cmd)
 
         deploying_folder = join(dirname(master_path), 'pull_'+str(result['number']))
         print('Folder where the pull request will be deployed: ' + deploying_folder)
@@ -222,7 +257,8 @@ if __name__ == "__main__":
             continue
 
         # pull stuff from the branch in question
-        cmd = '%s pull %s %s' % (GIT_STRING, result['head']['repo']['git_url'], result['head']['ref'])
+        cmd = '%s pull %s %s' % (GIT_STRING, result['head']['repo']['git_url'],
+            result['head']['ref'])
         o, e, r = qiime_system_call(cmd)
         if r != 0:
             branch_problem('could not pull down the custom branch')
@@ -239,20 +275,16 @@ if __name__ == "__main__":
 
         # if nothing went wrong, run the script usage examples that will finally
         # let you see the rendered examples for this pull request
-        print('Before running script usage tests Im in %s', getcwd())
         run_script_usage_examples(script_path, deploying_folder)
 
         # go back to master so everything is safely kosher
         cmd = '%s checkout -f master' % GIT_STRING
         o, e, r = qiime_system_call(cmd)
         if r != 0:
-            branch_problem('could not check out master')
+            branch_problem('Could not check out master again')
             continue
 
         # delete the current branch only if we could switch back to master
         cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
         print('deleting the branch')
-
-
-
