@@ -1,5 +1,23 @@
 #!/usr/bin/env python
-from __future__ import print_function
+"""The EMPeror's worker:
+
+This script will render and make available visualizations of any of the script
+usage examples contained in the script interfaces for the EMPeror project
+(http://github.com/qiime/emperor).
+
+The main tasks this script covers are:
+    - When a new pull request is open in the GitHub repository, generate a
+    set of built examples available at:
+        emperor.colorado.edu/pull_XXX/make_emperor/
+
+        where XXX is the number of the issue/pull request in GitHub
+
+    - Updates the examples that are presented in emperor.colorado.edu
+
+This script is running every five minutes on emperor.colorado.edu and writes a
+log in /tmp/emperor.log.
+"""
+from __future__ import division
 
 __author__ = "Yoshiki Vazquez-Baeza"
 __credits__ = ["Yoshiki Vazquez Baeza"]
@@ -8,8 +26,7 @@ __license__ = "GPL"
 __version__ = "1.0.0-dev"
 __maintainer__ = "Yoshiki Vazquez-Baeza"
 __email__ = "yoshiki89@gmail.com"
-__status__ = "Development"
-
+__status__ = "Production"
 
 from urllib import urlopen
 from site import addsitedir
@@ -22,6 +39,7 @@ from os import chdir, getcwd, makedirs
 from os.path import split as path_split
 from datetime import datetime, timedelta
 from subprocess import Popen, PIPE, STDOUT
+from logging import log, basicConfig, DEBUG, ERROR, WARNING, INFO
 from os.path import abspath, dirname, join, basename, splitext, exists
 
 # https://api.github.com/repos/qiime/emperor/pulls
@@ -56,7 +74,7 @@ def get_paged_request(url):
     """get a full list, handling APIv3's paging"""
     results = []
     while url:
-        print("fetching %s" % url)
+        log(INFO, "Fetching GitHub's %s" % url)
         f = urlopen(url)
         results.extend(load_json(f))
         links = parse_link_header(f.headers)
@@ -129,13 +147,12 @@ def run_script_usage_examples(script_path, output_dir):
     for example in usage_examples:
         # %prog is the keyword in the scripts replace for the script name
         cmd = example[2].replace('%prog',script_name+'.py')
-        o, e, _ = qiime_system_call(cmd)
 
         # we should get the output name for the folder
         name = cmd.split('-o')[1].split(' ')[1]
         links.append(GENERIC_LINK % (join(name, 'index.html'), name))
         
-        print('Deleting: %s' % name)
+        log(INFO, 'Deleting: %s' % name)
         try:
             rmtree(name)
         except:
@@ -143,8 +160,8 @@ def run_script_usage_examples(script_path, output_dir):
 
         #raw_input('This folder has been delated %s' % name)
         o, e, r = qiime_system_call(cmd)
-        print("Executing: " + cmd)
-        if r != 0: print(o, e)
+        log(INFO, "Executing: " + cmd)
+        if r != 0: log(ERROR, '\n'.join([o, e]))
 
     fd = open('index.html', 'w')
     if basename(output_dir) == 'master':
@@ -171,36 +188,46 @@ def branch_problem(message, git_string, pull_number):
     of the master branch in the current repository so any of the other
     pull requests that are open are not affected by this problem"""
 
-    print(message)
-    print('Cleaning the repo ...')
+    log(WARNING, message)
+    log(INFO, 'Cleaning the repository.')
+
+    # convenience lambda for cases where a message + stderr & stdout are printed
+    error_logging = lambda x, o, e: log(ERROR, x+'%s' % ''.join([o, e]))
 
     # clean any extraneous files that are laying around
     cmd = '%s clean -xdf' % git_string
     o, e, r = qiime_system_call(cmd)
-    if r != 0: print('Fatal, could not clean the repository.')
-    exit(1)
+    if r != 0:
+        error_logging('Fatal, could not clean the repository: ', o, e)
+        exit(1)
 
     # undo all the changes that could have been generated
     cmd = '%s reset --hard HEAD *' % git_string
     o, e, r = qiime_system_call(cmd)
-    if r != 0: print('Fatal, could not reset to the current HEAD.')
-    exit(1)
+    if r != 0:
+        error_logging('Fatal, could not reset to the current HEAD: ', o, e)
+        exit(1)
 
     # force back to be at the master branch
     cmd = '%s checkout -f master' % git_string
     o, e, r = qiime_system_call(cmd)
-    if r != 0: print('Fatal, could not force back to master.')
-    exit(1)
+    if r != 0:
+        error_logging('Fatal, could not force back to master: ', o, e)
+        exit(1)
 
     # delete the current branch
     cmd = '%s branch -D pull_%s' % (git_string, pull_number)
     o, e, r = qiime_system_call(cmd)
-    if r != 0: print('Could not delete the branch.')
+    if r != 0:
+        error_logging('Could not delete the branch: ', o, e)
+        exit(1)
 
 
 if __name__ == "__main__":
 
-    # a la viva mexico! (read with an american accent)
+    basicConfig(filename='/tmp/emperor.log', level=DEBUG,
+        format='[%(asctime)s].%(levelname)s: %(message)s')
+
     try:
         emperor_path = argv[1]
     except IndexError:
@@ -217,8 +244,8 @@ if __name__ == "__main__":
 
     # we must be able to pull from master, if this is not possible exit
     if r != 0:
-        print('Could not pull from master, not continuing.')
-        print(o, e)
+        log(ERROR, 'Could not pull from master, not continuing.')
+        log(ERROR, ''.join([o, e]))
         exit(1)
 
     # if we were able to update master build the script_path and run the 
@@ -229,21 +256,22 @@ if __name__ == "__main__":
     try:
         results = get_paged_request(GITHUB_URL)
     except IOError:
-        print('Could not establish a connection', file=stderr)
+        log(ERROR, 'Could not establish a connection')
+        exit(1)
 
     if len(results) == 0:
-        print('There are no active pull requests to deploy')
+        log(INFO, 'There are no active pull requests to deploy')
         exit(0)
 
     # if we found active pull requests then deploy them
     for result in results:
-        print('Active pull request "pull_%s"' % result['number'])
-        print('URL: %s' % result['head']['repo']['git_url'])
-        print('Branch name: %s' % result['head']['ref'])
-
         deploying_folder = join(dirname(master_path), 'pull_'+str(
             result['number']))
-        print('Folder where the pull request will be deployed: ',
+
+        log(INFO, 'Active pull request "pull_%s"' % result['number'])
+        log(INFO, 'URL: %s' % result['head']['repo']['git_url'])
+        log(INFO, 'Branch name: %s' % result['head']['ref'])
+        log(INFO, 'Folder where the pull request will be deployed: %s' %
             deploying_folder)
 
         chdir(emperor_path)
@@ -252,7 +280,8 @@ if __name__ == "__main__":
         cmd = '%s checkout -b pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
         if r != 0:
-            branch_problem('could not checkout a new branch')
+            branch_problem('could not checkout a new branch', GIT_STRING,
+                result['number'])
             continue
 
         # pull stuff from the branch in question
@@ -260,7 +289,8 @@ if __name__ == "__main__":
             result['head']['ref'])
         o, e, r = qiime_system_call(cmd)
         if r != 0:
-            branch_problem('could not pull down the custom branch')
+            branch_problem('could not pull down the custom branch', GIT_STRING,
+                result['number'])
             continue
 
         # once we pull whether or not it's right i. e. no conflicts, remove the
@@ -280,10 +310,11 @@ if __name__ == "__main__":
         cmd = '%s checkout -f master' % GIT_STRING
         o, e, r = qiime_system_call(cmd)
         if r != 0:
-            branch_problem('Could not check out master again')
+            branch_problem('Could not check out master again', GIT_STRING,
+                result['number'])
             continue
 
         # delete the current branch only if we could switch back to master
         cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
-        print('deleting the branch')
+        log(INFO, 'deleting the branch')
