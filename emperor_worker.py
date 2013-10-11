@@ -8,22 +8,22 @@ __maintainer__ = "Yoshiki Vazquez-Baeza"
 __email__ = "yoshiki89@gmail.com"
 __status__ = "Use at your own risk"
 
+
 from urllib import urlopen
+from site import addsitedir
+from sys import argv, stderr
 from json import load as load_json
 from subprocess import check_output
-from re import compile as re_compile
-from datetime import datetime, timedelta
-
-from site import addsitedir
-from os import chdir, getcwd, makedirs
-from sys import argv, stderr
 from shutil import copytree, rmtree
+from re import compile as re_compile
+from os import chdir, getcwd, makedirs
 from os.path import split as path_split
+from datetime import datetime, timedelta
 from subprocess import Popen, PIPE, STDOUT
 from os.path import abspath, dirname, join, basename, splitext, exists
 
 # https://api.github.com/repos/qiime/emperor/pulls
-#curl -i https://api.github.com/repos/qiime/emperor | less -S
+# curl -i https://api.github.com/repos/qiime/emperor | less -S
 
 GITHUB_URL = "https://api.github.com/repos/qiime/emperor/pulls"
 ELEMENT_PAT = re_compile(r'<(.+?)>')
@@ -40,7 +40,7 @@ GENERIC_INDEX = """<!DOCTYPE html>
 GENERIC_LINK = """<br><a href="%s">%s</a>
 """
 
-# Taken from matplotlibs tools/github_stats.py
+# Taken from matplotlib's tools/github_stats.py
 def parse_link_header(headers):
     link_s = headers.get('link', '')
     urls = ELEMENT_PAT.findall(link_s)
@@ -49,6 +49,7 @@ def parse_link_header(headers):
     for rel,url in zip(rels, urls):
         d[rel] = url
     return d
+
 # Taken from matplotlibs tools/github_stats.py
 def get_paged_request(url):
     """get a full list, handling APIv3's paging"""
@@ -61,7 +62,7 @@ def get_paged_request(url):
         url = links.get('next')
     return results
 
-# obviously this was taken from QIIME qiime/util.py
+# taken from QIIME qiime/util.py
 def qiime_system_call(cmd, shell=True):
     """Call cmd and return (stdout, stderr, return_value).
 
@@ -109,12 +110,13 @@ def run_script_usage_examples(script_path, output_dir):
 
     o, e, _ = qiime_system_call('git --git-dir=/home/yova1074/emperor/.git branch')
     print(o, e)
-    #raw_input('Before compying the data from %s to %s ' % (test_data_dir, output_dir))
-    copytree(test_data_dir, output_dir)
-    #raw_input('Once the data has been copied')
-    chdir(output_dir)
+
+    o, e, _ = qiime_system_call('cp -Rf %s %s' % (test_data_dir, output_dir))
+    # copytree(test_data_dir, output_dir)
+
     print(getcwd())
 
+    chdir(script_name)
     for example in usage_examples:
         cmd = example[2].replace('%prog',script_name+'.py')
         o, e, _ = qiime_system_call(cmd)
@@ -157,21 +159,18 @@ if __name__ == "__main__":
     except IndexError:
         master_path = '/var/www/html/master'
 
-
     # this string is annoyingly re-used in every git command call
     GIT_STRING = 'git --git-dir=%s/.git ' % emperor_path
-
-    #print('The URL is %s' % GITHUB_URL, file=stderr)
-
     PULL = '%s pull git://github.com/qiime/emperor.git master' % GIT_STRING
     e, o, r = qiime_system_call(PULL)
 
+    # we must be able to pull from master, if this is not possible exit
     if r != 0:
         print('Could not pull from master, not continuing.')
-        print(o)
-        print(e)
-        exit(0)
+        print(o, e)
+        exit(1)
 
+    # if we were able to update master build the script_path and run the 
     script_path = join(emperor_path, 'scripts/make_emperor.py')
     run_script_usage_examples(script_path, master_path)
 
@@ -185,9 +184,6 @@ if __name__ == "__main__":
         print('No active pull requests, getting the exiting ...')
         exit(0)
 
-    #print('I do not know what is going on with this')
-    #exit(1111);
-
     for result in results:
         print('Active pull request "pull_%s"' % result['number'])
         print('URL: %s' % result['head']['repo']['git_url'])
@@ -198,24 +194,25 @@ if __name__ == "__main__":
             # files, reset the repository to the latest head and force a checkout
             # of the master branch in the current repository so any of the other
             # pull requests that are open are not affected by this problem
-            if r != 0:
-                print(message)
-                print('Cleaning the repo ...')
-                cmd = '%s clean -xdf' % GIT_STRING
-                o, e, r = qiime_system_call(cmd)
+            print(message)
+            print('Cleaning the repo ...')
+            cmd = '%s clean -xdf' % GIT_STRING
+            o, e, r = qiime_system_call(cmd)
 
-                cmd = '%s reset --hard HEAD' % GIT_STRING
-                o, e, r = qiime_system_call(cmd)
+            cmd = '%s reset --hard HEAD *' % GIT_STRING
+            o, e, r = qiime_system_call(cmd)
 
-                cmd = '%s checkout -f master' % GIT_STRING
-                o, e, r = qiime_system_call(cmd)
+            cmd = '%s checkout -f master' % GIT_STRING
+            o, e, r = qiime_system_call(cmd)
 
-                # delete the current branch
-                cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
-                o, e, r = qiime_system_call(cmd)
+            # delete the current branch
+            cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
+            o, e, r = qiime_system_call(cmd)
 
         deploying_folder = join(dirname(master_path), 'pull_'+str(result['number']))
-        print 'Folder where the pull request will be deployed: ' + deploying_folder
+        print('Folder where the pull request will be deployed: ' + deploying_folder)
+
+        chdir(emperor_path)
 
         # create a new branch whre this open pull request will live
         cmd = '%s checkout -b pull_%s' % (GIT_STRING, result['number'])
@@ -242,6 +239,7 @@ if __name__ == "__main__":
 
         # if nothing went wrong, run the script usage examples that will finally
         # let you see the rendered examples for this pull request
+        print('Before running script usage tests Im in %s', getcwd())
         run_script_usage_examples(script_path, deploying_folder)
 
         # go back to master so everything is safely kosher
