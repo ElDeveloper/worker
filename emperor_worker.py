@@ -202,7 +202,7 @@ def branch_problem(message, git_string, pull_number):
         exit(1)
 
     # undo all the changes that could have been generated
-    cmd = '%s reset --hard HEAD *' % git_string
+    cmd = '%s reset --hard HEAD' % git_string
     o, e, r = qiime_system_call(cmd)
     if r != 0:
         error_logging('Fatal, could not reset to the current HEAD: ', o, e)
@@ -225,7 +225,7 @@ def branch_problem(message, git_string, pull_number):
 
 if __name__ == "__main__":
 
-    basicConfig(filename='/tmp/emperor.log', level=DEBUG,
+    basicConfig(filename='/var/log/emperor.log', level=DEBUG,
         format='[%(asctime)s].%(levelname)s: %(message)s')
 
     try:
