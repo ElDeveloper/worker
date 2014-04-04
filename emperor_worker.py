@@ -46,7 +46,7 @@ from os.path import abspath, dirname, join, basename, splitext, exists
 # curl -i https://api.github.com/repos/qiime/emperor | less -S
 
 # repository that we want to be pulling from
-GITHUB_URL = "https://api.github.com/repos/qiime/emperor/pulls"
+GITHUB_URL = "https://api.github.com/repos/biocore/emperor/pulls"
 
 # HTML formatting strings for the index.html files for each pull request
 GENERIC_INDEX = """<!DOCTYPE html>
