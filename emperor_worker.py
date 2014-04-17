@@ -28,6 +28,7 @@ __maintainer__ = "Yoshiki Vazquez-Baeza"
 __email__ = "yoshiki89@gmail.com"
 __status__ = "Production"
 
+from github3 import login
 from urllib import urlopen
 from site import addsitedir
 from sys import argv, stderr
@@ -38,6 +39,7 @@ from re import compile as re_compile
 from os import chdir, getcwd, makedirs
 from os.path import split as path_split
 from datetime import datetime, timedelta
+from passwords import username, password
 from subprocess import Popen, PIPE, STDOUT
 from logging import log, basicConfig, DEBUG, ERROR, WARNING, INFO
 from os.path import abspath, dirname, join, basename, splitext, exists
@@ -68,6 +70,23 @@ def parse_link_header(headers):
     for rel,url in zip(rels, urls):
         d[rel] = url
     return d
+
+def post_comment_with_link(issue_number):
+    issue_number = int(issue_number)
+
+    gh = login(username, password)
+    issue = gh.issue('biocore', 'emperor', issue_number)
+    comments = list(issue.iter_comments())
+
+    dont_comment = False
+    for comment in comments:
+        if comment.user.login == 'emperor-helper':
+            dont_comment = True
+            break
+    if dont_comment == False:
+        _ = issue.create_comment('The test build for this pull request can be '
+                                 'found here: http://emperor.colorado.edu/pull'
+                                 '_%d/make_emperor/' % issue_number)
 
 # Taken from matplotlibs tools/github_stats.py
 def get_paged_request(url):
@@ -318,3 +337,7 @@ if __name__ == "__main__":
         cmd = '%s branch -D pull_%s' % (GIT_STRING, result['number'])
         o, e, r = qiime_system_call(cmd)
         log(INFO, 'deleting the branch')
+
+        post_comment_with_link(result['number'])
+        log(INFO, 'comment has or has not been posted now')
+
