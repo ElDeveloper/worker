@@ -14,6 +14,9 @@ The main tasks this script covers are:
 
     - Updates the examples that are presented in emperor.colorado.edu
 
+    - With the help of @emperor-helper, this script will post a link to the
+    built examples after a new pull request is issued.
+
 This script is running every five minutes on emperor.colorado.edu and writes a
 log in /tmp/emperor.log.
 """
