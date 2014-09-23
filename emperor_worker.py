@@ -31,6 +31,8 @@ __maintainer__ = "Yoshiki Vazquez-Baeza"
 __email__ = "yoshiki89@gmail.com"
 __status__ = "Production"
 
+import requests
+
 from github3 import login
 from urllib import urlopen
 from site import addsitedir
@@ -287,6 +289,15 @@ if __name__ == "__main__":
 
     # if we found active pull requests then deploy them
     for result in results:
+        log(INFO, 'Checking %s' % str(result['number']))
+        x = requests.get('https://api.github.com/repos/biocore/emperor/pulls/'
+                         '%s' % str(result['number']))
+
+        # we need to know that the branch can be merged otherwise ignore it
+        if x.json()['mergeable'] == False:
+            log(INFO, 'Ignoring %s, not mergeable' % str(result['number']))
+            continue
+
         deploying_folder = join(dirname(master_path), 'pull_'+str(
             result['number']))
 
