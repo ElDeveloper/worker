@@ -8,16 +8,16 @@ usage examples contained in the script interfaces for the EMPeror project
 The main tasks this script covers are:
     - When a new pull request is open in the GitHub repository, generate a
     set of built examples available at:
-        emperor.colorado.edu/pull_XXX/make_emperor/
+        emperor.microbio.me/pull_XXX/make_emperor/
 
         where XXX is the number of the issue/pull request in GitHub
 
-    - Updates the examples that are presented in emperor.colorado.edu
+    - Updates the examples that are presented in emperor.microbio.me
 
     - With the help of @emperor-helper, this script will post a link to the
     built examples after a new pull request is issued.
 
-This script is running every five minutes on emperor.colorado.edu and writes a
+This script is running every five minutes on emperor.microbio.me and writes a
 log in /tmp/emperor.log.
 """
 from __future__ import division
@@ -90,7 +90,7 @@ def post_comment_with_link(issue_number):
             break
     if dont_comment == False:
         _ = issue.create_comment('The test build for this pull request can be '
-                                 'found here: http://emperor.colorado.edu/pull'
+                                 'found here: http://emperor.microbio.me/pull'
                                  '_%d/make_emperor/' % issue_number)
 
 # Taken from matplotlibs tools/github_stats.py
