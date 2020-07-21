@@ -1,4 +1,4 @@
 worker
 ======
 
-Emperor's slave
+Emperor's helper
