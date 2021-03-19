@@ -1,11 +1,11 @@
 #!/usr/bin/env python
+from tornado import httpserver, ioloop, web
+from tornado.options import define, options
+from credentials import username, token
+from github3 import login
 
 import os
 from os.path import join
-from tornado import httpserver, ioloop, web
-from tornado.options import define, options
-from credentials import username, password
-from github3 import login
 
 
 define("port", default=8888, help="run on the given port", type=int)
@@ -20,8 +20,7 @@ class Application(web.Application):
         web.Application.__init__(self, handlers, debug=options.debug)
 
 
-# touch 1.qzv 2.qzv 3.qzv
-# curl -POST -F "files[]=@1.qzv" -F "files[]=@2.qzv" -F "files[]=@3.qzv"
+# from a registered url: curl -POST -F files=@"$PWDempress-tree-tandem.qzv"
 # mchelper.ucsd.edu:8888/uploads/empress/master/
 class UploadHandler(web.RequestHandler):
     def post(self, repo, branch):
@@ -53,11 +52,12 @@ class UploadHandler(web.RequestHandler):
         if branch != 'master':
             post_comment_with_link(repo, branch, responses)
 
-        self.finish('\n'.join(responses))
+        self.write('\n'.join(responses))
 
 
 def post_comment_with_link(repo, branch, urls):
-    gh = login(username, password)
+
+    gh = login(token=token)
     pr = gh.pull_request('biocore', repo, branch)
 
     # if no posts by emperor-helper then post a comment
