@@ -40,4 +40,5 @@ nosetests.xml
 *~
 
 # credentials
+credentials.py
 passwords.py
